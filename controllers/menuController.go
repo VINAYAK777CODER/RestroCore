@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/VINAYAK777CODER/RestroCore/database"
@@ -13,6 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 var menuCollection  *mongo.Collection=database.OpenCollection(database.Client,"menu")
 
@@ -26,8 +28,32 @@ func GetMenus() gin.HandlerFunc {
 		// 2. Slice to hold all menus
 		var allMenus []models.Menu
 
-		// 3. Find all documents (empty filter)
-		cursor, err := menuCollection.Find(ctx, bson.M{})
+		// -------------------- PAGINATION LOGIC START --------------------
+		// Query parameters from client: page & limit
+		pageStr := c.DefaultQuery("page", "1")   // which page user wants
+		limitStr := c.DefaultQuery("limit", "10") // how many items per page
+
+		page, _ := strconv.Atoi(pageStr)
+		limit, _ := strconv.Atoi(limitStr)
+
+		// page and limit should never be zero or negative
+		if page < 1 {
+			page = 1
+		}
+		if limit < 1 {
+			limit = 10
+		}
+
+		// skip = how many items to skip based on page
+		skip := (page - 1) * limit
+		// -------------------- PAGINATION LOGIC END ----------------------
+
+		// 3. Find all documents (empty filter) + apply pagination
+		cursor, err := menuCollection.Find(
+			ctx, 
+			bson.M{}, 
+			options.Find().SetSkip(int64(skip)).SetLimit(int64(limit)),
+		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": "error occurred while fetching menus",
@@ -48,6 +74,7 @@ func GetMenus() gin.HandlerFunc {
 		c.JSON(http.StatusOK, allMenus)
 	}
 }
+
 
 
 

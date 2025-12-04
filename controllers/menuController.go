@@ -110,8 +110,110 @@ func CreateMenu() gin.HandlerFunc{
 	}
 }
 
-func UpdateMenu() gin.HandlerFunc{
-	return func(c* gin.Context){
-		
+// UpdateMenu updates an existing menu (partial update supported).
+func UpdateMenu() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
+
+		menuId := c.Param("menu_id")
+		if menuId == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "menu_id is required in URL"})
+			return
+		}
+
+		// Input struct for partial updates (all fields optional)
+		type UpdateMenuInput struct {
+			Name       *string    `json:"name,omitempty" validate:"omitempty,min=2,max=50"`
+			Category   *string    `json:"category,omitempty" validate:"omitempty,min=2,max=50"`
+			Start_Date *time.Time `json:"start_date,omitempty"`
+			End_Date   *time.Time `json:"end_date,omitempty"`
+		}
+
+		var input UpdateMenuInput
+
+		// 1. Bind JSON
+		if err := c.BindJSON(&input); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// 2. If no fields provided, nothing to update
+		if input.Name == nil &&
+			input.Category == nil &&
+			input.Start_Date == nil &&
+			input.End_Date == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "no fields provided to update"})
+			return
+		}
+
+		// 3. Validate only provided fields
+		if err := validate.Struct(input); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// 4. Business rule: if both dates are present, end_date must not be before start_date
+		if input.Start_Date != nil && input.End_Date != nil {
+			if input.End_Date.Before(*input.Start_Date) {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": "end_date cannot be before start_date",
+				})
+				return
+			}
+		}
+
+		// 5. Build update object dynamically
+		update := bson.D{}
+
+		if input.Name != nil {
+			update = append(update, bson.E{Key: "name", Value: *input.Name})
+		}
+		if input.Category != nil {
+			update = append(update, bson.E{Key: "category", Value: *input.Category})
+		}
+		if input.Start_Date != nil {
+			update = append(update, bson.E{Key: "start_date", Value: input.Start_Date})
+		}
+		if input.End_Date != nil {
+			update = append(update, bson.E{Key: "end_date", Value: input.End_Date})
+		}
+
+		// Always update timestamp
+		update = append(update, bson.E{Key: "updated_at", Value: time.Now()})
+
+		filter := bson.M{"menu_id": menuId}
+
+		// 6. Perform the update
+		result, err := menuCollection.UpdateOne(
+			ctx,
+			filter,
+			bson.D{{Key: "$set", Value: update}},
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "failed to update menu",
+			})
+			return
+		}
+
+		if result.MatchedCount == 0 {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "menu not found",
+			})
+			return
+		}
+
+		// 7. Optionally return updated document
+		var updatedMenu models.Menu
+		if err := menuCollection.FindOne(ctx, filter).Decode(&updatedMenu); err != nil {
+			// Update succeeded but fetch failed – still OK from a write perspective
+			c.JSON(http.StatusOK, gin.H{
+				"message": "menu updated successfully",
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, updatedMenu)
 	}
 }

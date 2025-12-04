@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -16,15 +15,18 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-var foodCollection *mongo.Collection=database.OpenCollection(database.Client,"food")
-var validate=validator.New()
-func GetFoods() gin.HandlerFunc{
-	return func(c* gin.Context){
+var foodCollection *mongo.Collection = database.OpenCollection(database.Client, "food")
+
+
+var validate = validator.New()
+
+func GetFoods() gin.HandlerFunc {
+	return func(c *gin.Context) {
 
 	}
 }
 
-//Get Food
+// Get Food
 func GetFood() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
@@ -42,7 +44,6 @@ func GetFood() gin.HandlerFunc {
 		c.JSON(http.StatusOK, food)
 	}
 }
-
 
 func CreateFood() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -101,19 +102,16 @@ func CreateFood() gin.HandlerFunc {
 	}
 }
 
-
-func round(num float64) int{
-
-}
-
-func toFixed(num float64,precision int) float64{
+func round(num float64) int {
 
 }
 
+func toFixed(num float64, precision int) float64 {
 
-func UpdateFood() gin.HandlerFunc{
-	return func(c* gin.Context){
-		
+}
+
+func UpdateFood() gin.HandlerFunc {
+	return func(c *gin.Context) {
+
 	}
 }
-

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/VINAYAK777CODER/RestroCore/database"
@@ -13,6 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 var foodCollection *mongo.Collection = database.OpenCollection(database.Client, "food")
@@ -22,9 +24,55 @@ var validate = validator.New()
 
 func GetFoods() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// context with timeout
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*100)
+		defer cancel()
 
+		// slice to hold all the foods
+		var allFoods []models.Food
+
+		// -------------------- PAGINATION LOGIC STARTS --------------------
+		// Query params: page and limit, if not provided default values are used
+		pageStr := c.DefaultQuery("page", "1")  // page number
+		limitStr := c.DefaultQuery("limit", "10") // how many items per page
+
+		page, _ := strconv.Atoi(pageStr)
+		limit, _ := strconv.Atoi(limitStr)
+
+		if page < 1 {
+			page = 1 // page cannot be 0 or negative
+		}
+		if limit < 1 {
+			limit = 10 // limit cannot be 0 or negative
+		}
+
+		skip := (page - 1) * limit // how many documents to skip
+		// -------------------- PAGINATION LOGIC ENDS --------------------
+
+		// find all the documents (empty filter)
+		// added SetSkip and SetLimit for pagination
+		cursor, err := foodCollection.Find(
+			ctx,
+			bson.M{},
+			options.Find().SetSkip(int64(skip)).SetLimit(int64(limit)),
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occurred while fetching foods"})
+			return
+		}
+		defer cursor.Close(ctx) // always close the cursor
+
+		// decode all the documents into the slice
+		if err := cursor.All(ctx, &allFoods); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occurred while decoding food data"})
+			return
+		}
+
+		// Successfully return paginated results
+		c.JSON(http.StatusOK, allFoods)
 	}
 }
+
 
 // Get Food
 func GetFood() gin.HandlerFunc {
@@ -112,6 +160,7 @@ func toFixed(num float64, precision int) float64 {
 
 func UpdateFood() gin.HandlerFunc {
 	return func(c *gin.Context) {
+
 
 	}
 }

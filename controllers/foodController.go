@@ -163,46 +163,57 @@ func toFixed(num float64, precision int) float64 {
 
 }
 
+// UpdateFood updates one or more fields of an existing food item.
+// Supports partial updates: name, price, food_image, and menu_id.
 func UpdateFood() gin.HandlerFunc {
     return func(c *gin.Context) {
+
+        // Create a timeout context for MongoDB operations
         ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
         defer cancel()
 
+        // Get food_id from URL parameter
         foodId := c.Param("food_id")
         if foodId == "" {
             c.JSON(http.StatusBadRequest, gin.H{"error": "food_id is missing"})
             return
         }
 
+        // Struct for handling optional update fields (PATCH-like behavior)
         type UpdateFoodInput struct {
-            Name       *string  `json:"name,omitempty" validate:"omitempty,min=2,max=100"`
-            Price      *float64 `json:"price,omitempty" validate:"omitempty"`
-            Food_image *string  `json:"food_image,omitempty" validate:"omitempty"`
+            Name        *string  `json:"name,omitempty" validate:"omitempty,min=2,max=100"`
+            Price       *float64 `json:"price,omitempty" validate:"omitempty"`
+            Food_image  *string  `json:"food_image,omitempty" validate:"omitempty"`
+            Menu_id     *string  `json:"menu_id,omitempty" validate:"omitempty"`
         }
 
         var input UpdateFoodInput
 
-        // Bind JSON
+        // Parse and bind JSON body into input struct
         if err := c.BindJSON(&input); err != nil {
             c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
             return
         }
 
-        // If no fields provided
+        // Ensure at least one field was provided
         if input.Name == nil &&
             input.Price == nil &&
-            input.Food_image == nil {
+            input.Food_image == nil &&
+            input.Menu_id == nil {
+
             c.JSON(http.StatusBadRequest, gin.H{"error": "no fields provided to update"})
             return
         }
 
-        // Validate only provided fields
+        // Validate only the fields provided in the request
         if err := validate.Struct(input); err != nil {
             c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
             return
         }
 
-        // Build update object dynamically
+        // ------------------------------
+        // Build MongoDB update document
+        // ------------------------------
         update := bson.D{}
 
         if input.Name != nil {
@@ -210,6 +221,7 @@ func UpdateFood() gin.HandlerFunc {
         }
 
         if input.Price != nil {
+            // Round price to 2 decimal places before saving
             rounded := toFixed(*input.Price, 2)
             update = append(update, bson.E{Key: "price", Value: rounded})
         }
@@ -218,12 +230,17 @@ func UpdateFood() gin.HandlerFunc {
             update = append(update, bson.E{Key: "food_image", Value: *input.Food_image})
         }
 
-        // Auto-update timestamp
+        if input.Menu_id != nil {
+            update = append(update, bson.E{Key: "menu_id", Value: *input.Menu_id})
+        }
+
+        // Always update 'updated_at' timestamp
         update = append(update, bson.E{Key: "updated_at", Value: time.Now()})
 
+        // Filter to match the correct food item
         filter := bson.M{"food_id": foodId}
 
-        // Perform the update
+        // Perform database update using $set operator
         result, err := foodCollection.UpdateOne(
             ctx,
             filter,
@@ -237,6 +254,7 @@ func UpdateFood() gin.HandlerFunc {
             return
         }
 
+        // If no document was matched, return not found
         if result.MatchedCount == 0 {
             c.JSON(http.StatusNotFound, gin.H{
                 "error": "food not found",
@@ -244,17 +262,20 @@ func UpdateFood() gin.HandlerFunc {
             return
         }
 
-        // Return updated food
+        // Fetch updated food to return in response
         var updatedFood models.Food
         if err := foodCollection.FindOne(ctx, filter).Decode(&updatedFood); err != nil {
+            // Fallback response if decoding fails
             c.JSON(http.StatusOK, gin.H{
                 "message": "food updated successfully",
             })
             return
         }
 
+        // Send fully updated food as response
         c.JSON(http.StatusOK, updatedFood)
     }
 }
+
 
 

@@ -84,6 +84,12 @@ func GetMenu() gin.HandlerFunc{
 		defer cancel()
 
 		menuId := c.Param("menu_id")
+		// 🔥 Check if food_id is missing
+        if menuId == "" {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "menu_id is required"})
+            return
+        }
+
 		var menu models.Menu
 
 		err := menuCollection.FindOne(ctx, bson.M{"menu_id": menuId}).Decode(&menu)

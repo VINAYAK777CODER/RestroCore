@@ -9,6 +9,7 @@ import (
 	"github.com/VINAYAK777CODER/RestroCore/models"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 var invoiceCollection *mongo.Collection=database.OpenCollection(database.Client,"invoice")
@@ -108,11 +109,64 @@ func GetInvoice() gin.HandlerFunc {
 }
 
 
-func CreateInvoice() gin.HandlerFunc{
-	return func(c* gin.Context){
+func CreateInvoice() gin.HandlerFunc {
+	return func(c *gin.Context) {
 
+		// create context with timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
+
+		var invoice models.Invoice
+
+		// bind request body (ONLY order_id & payment_method allowed)
+		if err := c.BindJSON(&invoice); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON body"})
+			return
+		}
+
+		// validate required fields (order_id)
+		if err := validate.Struct(invoice); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// generate MongoDB ID & invoice_id
+		invoice.ID = primitive.NewObjectID()
+		invoice.Invoice_id = invoice.ID.Hex()
+
+		// RESTAURANT LOGIC (backend controlled)
+		status := "PENDING"
+		invoice.Payment_status = &status
+
+		// payment due in 30 minutes
+		invoice.Payment_due_date = time.Now().Add(30 * time.Minute)
+
+		// timestamps
+		invoice.Created_at = time.Now()
+		invoice.Updated_at = time.Now()
+
+		// insert invoice into DB
+		_, err := invoiceCollection.InsertOne(ctx, invoice)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create invoice"})
+			return
+		}
+
+		// prepare response (view model)
+		invoiceView := InvoiceView{
+			Invoice_id:       invoice.Invoice_id,
+			Order_id:         invoice.Order_id,
+			Payment_method:   invoice.Payment_method,
+			Payment_status:   invoice.Payment_status,
+			Payment_due_date: invoice.Payment_due_date,
+			Created_at:       invoice.Created_at,
+		}
+
+		// send response
+		c.JSON(http.StatusCreated, invoiceView)
 	}
 }
+
 
 func UpdateInvoice() gin.HandlerFunc {
 	return func(c *gin.Context) {

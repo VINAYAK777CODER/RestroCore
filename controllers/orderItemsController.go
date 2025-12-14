@@ -99,11 +99,36 @@ func GetOrderItemByOrder() gin.HandlerFunc {
 
 
 
-func GetOrderItem() gin.HandlerFunc{
-	return func(c* gin.Context){
+func GetOrderItem() gin.HandlerFunc {
+	return func(c *gin.Context) {
 
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
+
+		// get order_item_id from URL
+		orderItemId := c.Param("order_item_id")
+		if orderItemId == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "order_item_id is required"})
+			return
+		}
+
+		var orderItem models.OrderItem
+
+		// correct bson field name
+		err := orderItemCollection.FindOne(
+			ctx,
+			bson.M{"order_item_id": orderItemId},
+		).Decode(&orderItem)
+
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "order item not found"})
+			return
+		}
+
+		c.JSON(http.StatusOK, orderItem)
 	}
 }
+
 
 func CreateOrderItem() gin.HandlerFunc{
 	return func(c* gin.Context){
